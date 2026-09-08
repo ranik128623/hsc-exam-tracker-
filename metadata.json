@@ -1,0 +1,6 @@
+{
+  "name": "Pre-Test Command Center",
+  "description": "Pre-Test examination countdown, smart study planner, Pomodoro focus timer, and syllabus completion tracker optimized for iPad, iPhone, and desktop.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
