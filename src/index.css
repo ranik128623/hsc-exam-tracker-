@@ -6,6 +6,7 @@
   --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
+  --navbar-height: 4rem; /* 64px base height */
 }
 
 html {
@@ -34,24 +35,18 @@ textarea {
 
 /* iOS Safe Area Padding Helpers */
 .pt-safe {
-  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
 }
 
 .pb-safe {
-  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
 }
 
 .pl-safe {
-  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
 }
 
 .pr-safe {
-  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
 }
 
-/* Standalone fullscreen tweaks for iPadOS & iOS */
-@media all and (display-mode: standalone) {
-  header.sticky {
-    padding-top: env(safe-area-inset-top, 0px);
-  }
-}

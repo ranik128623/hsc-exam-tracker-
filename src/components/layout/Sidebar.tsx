@@ -108,9 +108,12 @@ export function Sidebar({ mobileMenuOpen, onCloseMobileMenu }: SidebarProps) {
 
       {/* Sidebar Content */}
       <aside
-        className={`fixed top-16 bottom-0 left-0 z-40 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between pb-[max(1rem,env(safe-area-inset-bottom,0px))] transition-transform duration-200 ease-in-out md:translate-x-0 ${
+        className={`fixed bottom-0 left-0 z-40 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between pb-[max(1rem,env(safe-area-inset-bottom,0px))] transition-transform duration-200 ease-in-out md:translate-x-0 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
+        style={{
+          top: 'calc(4rem + max(0.5rem, env(safe-area-inset-top, 0px)))',
+        }}
       >
         {/* Navigation Items */}
         <div className="p-4 space-y-1.5 overflow-y-auto">
