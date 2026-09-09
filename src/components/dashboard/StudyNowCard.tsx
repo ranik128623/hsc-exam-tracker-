@@ -8,24 +8,35 @@ export function StudyNowCard() {
     setFocusTimerModalOpen,
     setActiveTab,
     updateTopic,
+    applyTimerPreset,
+    setTimerSubject,
   } = useApp();
 
   if (!smartRecommendation) return null;
 
   const handleStartFocus = () => {
+    if (smartRecommendation.subjectId) {
+      setTimerSubject(smartRecommendation.subjectId);
+    }
+    const mins = smartRecommendation.recommendedMinutes || 25;
+    if (mins === 50) {
+      applyTimerPreset('50-10');
+    } else {
+      applyTimerPreset('25-5');
+    }
     setFocusTimerModalOpen(true);
   };
 
   const handleGoToSubject = () => {
-    setActiveTab('subjects');
+    setActiveTab('syllabus');
   };
 
   const handleMarkTopicDone = () => {
-    if (smartRecommendation.subjectId && smartRecommendation.topicId) {
-      updateTopic(smartRecommendation.subjectId, smartRecommendation.topicId, {
+    const targetId = smartRecommendation.chapterId || smartRecommendation.topicId;
+    if (smartRecommendation.subjectId && targetId) {
+      updateTopic(smartRecommendation.subjectId, targetId, {
         status: 'completed',
         firstRevision: true,
-        lastRevisedDate: new Date().toISOString().split('T')[0],
       });
     }
   };
@@ -68,7 +79,7 @@ export function StudyNowCard() {
             className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-sm transition-transform active:scale-95"
           >
             <Timer className="w-4 h-4" />
-            <span>Study This Now (25m)</span>
+            <span>Study This Now ({smartRecommendation.recommendedMinutes || 25}m)</span>
           </button>
 
           <button

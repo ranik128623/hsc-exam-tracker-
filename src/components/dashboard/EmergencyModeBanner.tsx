@@ -9,10 +9,9 @@ export function EmergencyModeBanner() {
     settings,
     updateSettings,
     subjects,
-    topicsDueForRevision,
-    weakTopics,
     mockTests,
     setActiveTab,
+    setFocusTimerModalOpen,
   } = useApp();
 
   const targetMs = getExamTargetMs(examConfig);
@@ -23,17 +22,29 @@ export function EmergencyModeBanner() {
 
   if (!isEmergencyActive) return null;
 
-  // Most important unfinished topics
-  const urgentUnfinishedTopics: { name: string; subjectName: string }[] = [];
+  // Urgent unfinished chapters
+  const urgentUnfinishedChapters: { name: string; subjectName: string }[] = [];
   subjects.forEach((s) => {
-    s.topics.forEach((t) => {
-      if (t.priority === 'high' && t.status !== 'completed' && urgentUnfinishedTopics.length < 4) {
-        urgentUnfinishedTopics.push({ name: t.name, subjectName: s.name });
+    (s.chapters || []).forEach((c) => {
+      if (!c.completed && urgentUnfinishedChapters.length < 4) {
+        urgentUnfinishedChapters.push({ name: c.name, subjectName: s.name });
       }
     });
   });
 
-  const criticalWeakTopics = weakTopics.filter((w) => w.status === 'Needs Attention').slice(0, 3);
+  // Chapters due for revision (completed but rev1 or rev2 not completed)
+  const chaptersDueForRevision: { name: string; subjectName: string; stage: string }[] = [];
+  subjects.forEach((s) => {
+    (s.chapters || []).forEach((c) => {
+      if (c.completed && (!c.rev1 || !c.rev2) && chaptersDueForRevision.length < 4) {
+        chaptersDueForRevision.push({
+          name: c.name,
+          subjectName: s.name,
+          stage: !c.rev1 ? 'Rev 1' : 'Rev 2',
+        });
+      }
+    });
+  });
 
   return (
     <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-950 via-slate-900 to-rose-950 text-white p-6 sm:p-7 shadow-xl border-2 border-rose-600/80 animate-fade-in">
@@ -70,25 +81,25 @@ export function EmergencyModeBanner() {
           </button>
         </div>
 
-        {/* 4 Critical Triage Columns */}
+        {/* 3 Critical Triage Columns */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Urgent Unfinished Topics */}
+          {/* Urgent Unfinished Chapters */}
           <div className="p-4 rounded-2xl bg-white/5 border border-rose-700/40 space-y-2">
             <span className="text-xs font-bold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
               <Flame className="w-3.5 h-3.5 text-rose-400" />
-              High-Yield Priority Topics
+              High-Priority Chapters Left
             </span>
-            {urgentUnfinishedTopics.length === 0 ? (
+            {urgentUnfinishedChapters.length === 0 ? (
               <p className="text-xs text-emerald-300 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> All high priority topics finished!
+                <CheckCircle2 className="w-3.5 h-3.5" /> All chapters finished!
               </p>
             ) : (
               <ul className="space-y-1.5 text-xs">
-                {urgentUnfinishedTopics.map((top, idx) => (
+                {urgentUnfinishedChapters.map((chap, idx) => (
                   <li key={idx} className="flex items-start gap-1.5 text-slate-200">
                     <span className="text-rose-400 font-bold">•</span>
                     <span>
-                      <strong className="text-white">{top.subjectName}:</strong> {top.name}
+                      <strong className="text-white">{chap.subjectName}:</strong> {chap.name}
                     </span>
                   </li>
                 ))}
@@ -96,21 +107,21 @@ export function EmergencyModeBanner() {
             )}
           </div>
 
-          {/* Revision Due Today */}
+          {/* Revision Due Immediately */}
           <div className="p-4 rounded-2xl bg-white/5 border border-amber-700/40 space-y-2">
             <span className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-              Revision Due Immediately ({topicsDueForRevision.length})
+              Revision Due Immediately ({chaptersDueForRevision.length})
             </span>
-            {topicsDueForRevision.length === 0 ? (
+            {chaptersDueForRevision.length === 0 ? (
               <p className="text-xs text-emerald-300">All revisions up to date!</p>
             ) : (
               <ul className="space-y-1.5 text-xs">
-                {topicsDueForRevision.slice(0, 3).map((item, idx) => (
+                {chaptersDueForRevision.slice(0, 3).map((item, idx) => (
                   <li key={idx} className="flex items-start gap-1.5 text-slate-200">
                     <span className="text-amber-400 font-bold">•</span>
                     <span>
-                      <strong className="text-white">{item.subjectName}:</strong> {item.topic.name} ({item.revisionType})
+                      <strong className="text-white">{item.subjectName}:</strong> {item.name} ({item.stage})
                     </span>
                   </li>
                 ))}
@@ -118,44 +129,40 @@ export function EmergencyModeBanner() {
             )}
           </div>
 
-          {/* Weak Topics & Recommended Emergency Schedule */}
+          {/* Recommended Emergency Protocol */}
           <div className="p-4 rounded-2xl bg-white/5 border border-purple-700/40 space-y-2">
             <span className="text-xs font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
               <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
-              Formula & Mistake Drill
+              Daily Emergency Protocol
             </span>
-            {criticalWeakTopics.length > 0 ? (
-              <ul className="space-y-1.5 text-xs">
-                {criticalWeakTopics.map((w) => (
-                  <li key={w.id} className="text-slate-200">
-                    <span className="text-purple-400 font-bold">•</span> {w.topicName} ({w.difficulty})
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs text-slate-300">
-                1. Morning: 3h formula sheets revision
-                <br />
-                2. Afternoon: 1 full-length timed mock test
-                <br />
-                3. Night: Error analysis & sleep early
-              </p>
-            )}
+            <div className="space-y-1 text-xs text-slate-200">
+              <p><strong className="text-purple-300">1. Morning:</strong> 2h high-yield formula & sheet drill</p>
+              <p><strong className="text-purple-300">2. Afternoon:</strong> Timed CQ & Board paper questions</p>
+              <p><strong className="text-purple-300">3. Evening:</strong> Active recall on past mistakes</p>
+            </div>
           </div>
         </div>
 
         {/* Quick Shortcut Buttons */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="text-xs text-rose-300/80">
-            {mockTests.length} Mock Tests Completed • Target at least 2 full mock exams before D-Day!
+            {mockTests.length} Mock Tests Logged • Target at least 2 full mock exams before D-Day!
           </div>
-          <button
-            onClick={() => setActiveTab('revision')}
-            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-transform active:scale-95"
-          >
-            <span>Open Revision Drills</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setFocusTimerModalOpen(true)}
+              className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <span>Launch Emergency Sprint</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('syllabus')}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-transform active:scale-95 cursor-pointer"
+            >
+              <span>Open Syllabus Tracker</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

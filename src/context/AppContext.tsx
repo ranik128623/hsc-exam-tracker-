@@ -12,6 +12,11 @@ import {
   UserSettings,
   ExamConfig,
   ActiveTab,
+  TimerMode,
+  TimerPreset,
+  ActiveTimerState,
+  MockTest,
+  SmartStudyRecommendation,
 } from '../types';
 import {
   DEFAULT_EXAM_CONFIG,
@@ -23,6 +28,7 @@ import {
 } from '../data/initialData';
 import {
   getDhakaTodayDateString,
+  getDhakaTimeString,
   getDhakaDateOffset,
   getDhakaWeekDays,
   formatMinutesToHoursMinutes,
@@ -33,6 +39,48 @@ import {
 import { playChimeSound } from '../utils/audioAndQuotes';
 
 const STORAGE_KEY = 'pretest_dash_v2';
+
+// Safe localStorage getter with backward compatibility across all past keys
+const getStoredItem = (subKey: string): string | null => {
+  try {
+    return (
+      localStorage.getItem(`${STORAGE_KEY}_${subKey}`) ||
+      localStorage.getItem(`pretest_dash_${subKey}`) ||
+      localStorage.getItem(`pretest_dash_v1_${subKey}`)
+    );
+  } catch {
+    return null;
+  }
+};
+
+const DEFAULT_MOCK_TESTS: MockTest[] = [
+  {
+    id: 'mock_1',
+    name: 'Physics 1st Paper - Full Model Test',
+    date: '2026-09-04',
+    subjectId: 'sub_physics',
+    subjectName: 'Physics',
+    totalMarks: 100,
+    obtainedMarks: 84,
+    percentage: 84.0,
+    timeTakenMinutes: 120,
+    mistakes: 'Formula recall error in Vector projections and Thermodynamics efficiency.',
+    weakAreas: 'Thermodynamics Carnot Cycle CQ',
+  },
+  {
+    id: 'mock_2',
+    name: 'Chemistry 1st Paper - CQ & MCQ Model Test',
+    date: '2026-09-06',
+    subjectId: 'sub_chemistry',
+    subjectName: 'Chemistry',
+    totalMarks: 75,
+    obtainedMarks: 62,
+    percentage: 82.7,
+    timeTakenMinutes: 90,
+    mistakes: 'Buffer solution pH precision in numericals.',
+    weakAreas: 'Chemical Equilibrium equilibrium constants',
+  },
+];
 
 export interface SubjectStat {
   subject: Subject;
@@ -100,6 +148,19 @@ interface AppContextType {
   setSidebarCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   focusTimerModalOpen: boolean;
   setFocusTimerModalOpen: (open: boolean) => void;
+  activeTimer: ActiveTimerState;
+  startTimer: () => void;
+  pauseTimer: () => void;
+  toggleTimerPlay: () => void;
+  resetTimer: () => void;
+  applyTimerPreset: (preset: TimerPreset, sMin?: number, bMin?: number) => void;
+  setTimerSubject: (subjectId: string) => void;
+  setTimerNotes: (notes: string) => void;
+  skipBreak: () => void;
+  finishAndLogSession: (customMinutes?: number) => void;
+  dismissCompletionAlert: () => void;
+  toggleTimerMinimized: () => void;
+  setTimerMinimized: (minimized: boolean) => void;
   quickEditExamModalOpen: boolean;
   setQuickEditExamModalOpen: (open: boolean) => void;
   notificationPermission: NotificationPermission;
@@ -148,6 +209,26 @@ interface AppContextType {
   addChapter: (subjectId: string, chapterName: string) => void;
   deleteChapter: (subjectId: string, chapterId: string) => void;
   updateChapter: (subjectId: string, chapterId: string, name: string) => void;
+
+  // Mock Tests
+  mockTests: MockTest[];
+  addMockTest: (test: Omit<MockTest, 'id' | 'percentage'>) => void;
+  deleteMockTest: (id: string) => void;
+  updateMockTest: (id: string, test: Partial<MockTest>) => void;
+  mockTestStats: {
+    averageScore: number;
+    highestScore: number;
+    lowestScore: number;
+    totalTests: number;
+  };
+
+  // Smart Recommendation & Helper
+  smartRecommendation: SmartStudyRecommendation | null;
+  updateTopic: (subjectId: string, topicId: string, updates?: any) => void;
+
+  // Data Export & Import (JSON)
+  exportDataJSON: () => string;
+  importDataJSON: (jsonStr: string) => boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -156,7 +237,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 1. Exam Configuration
   const [examConfig, setExamConfig] = useState<ExamConfig>(() => {
     try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_exam_config`);
+      const saved = getStoredItem('exam_config');
       return saved ? JSON.parse(saved) : DEFAULT_EXAM_CONFIG;
     } catch {
       return DEFAULT_EXAM_CONFIG;
@@ -166,7 +247,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 2. Subjects (Bangla, English, Physics, Chemistry, Math, Biology, ICT, editable from Settings)
   const [subjects, setSubjects] = useState<Subject[]>(() => {
     try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_subjects`);
+      const saved = getStoredItem('subjects');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -174,7 +255,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const def = DEFAULT_SUBJECTS.find(
               (d) => d.id === subj.id || d.name.toLowerCase() === subj.name.toLowerCase()
             );
-            const chapters = (subj.chapters && subj.chapters.length > 0) ? subj.chapters : (def?.chapters || []);
+            const chapters = subj.chapters !== undefined ? subj.chapters : (def?.chapters || []);
             return {
               ...subj,
               chapters: chapters.map((c: Chapter) => {
@@ -203,7 +284,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 3. Focus Sessions (Source of truth for all study time)
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>(() => {
     try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_sessions`);
+      const saved = getStoredItem('sessions');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -217,7 +298,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 4. Study Tasks / Reminders
   const [tasks, setTasks] = useState<StudyTask[]>(() => {
     try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_tasks`);
+      const saved = getStoredItem('tasks');
       return saved ? JSON.parse(saved) : DEFAULT_TASKS;
     } catch {
       return DEFAULT_TASKS;
@@ -227,7 +308,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 5. Daily Checklist
   const [checklist, setChecklist] = useState<DailyChecklistItem[]>(() => {
     try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_checklist`);
+      const saved = getStoredItem('checklist');
       return saved ? JSON.parse(saved) : DEFAULT_DAILY_CHECKLIST;
     } catch {
       return DEFAULT_DAILY_CHECKLIST;
@@ -237,10 +318,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 6. User Settings
   const [settings, setSettings] = useState<UserSettings>(() => {
     try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_settings`);
+      const saved = getStoredItem('settings');
       return saved ? { ...DEFAULT_USER_SETTINGS, ...JSON.parse(saved) } : DEFAULT_USER_SETTINGS;
     } catch {
       return DEFAULT_USER_SETTINGS;
+    }
+  });
+
+  // 7. Mock Tests (Requirement 18)
+  const [mockTests, setMockTests] = useState<MockTest[]>(() => {
+    try {
+      const saved = getStoredItem('mock_tests');
+      return saved ? JSON.parse(saved) : DEFAULT_MOCK_TESTS;
+    } catch {
+      return DEFAULT_MOCK_TESTS;
     }
   });
 
@@ -250,6 +341,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [focusTimerModalOpen, setFocusTimerModalOpen] = useState<boolean>(false);
   const [quickEditExamModalOpen, setQuickEditExamModalOpen] = useState<boolean>(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+
+  // 8. Active Floating & Global Focus Timer
+  const [activeTimer, setActiveTimer] = useState<ActiveTimerState>(() => {
+    const defaultTimer: ActiveTimerState = {
+      isRunning: false,
+      mode: 'study',
+      studyMinutes: 25,
+      breakMinutes: 5,
+      secondsRemaining: 25 * 60,
+      selectedSubjectId: subjects.length > 0 ? subjects[0].id : '',
+      preset: '25-5',
+      sessionNotes: '',
+      targetEndTime: null,
+      completedSessionsCount: 0,
+      isMinimized: false,
+      showCompletionAlert: false,
+      lastCompletedMinutes: 25,
+    };
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_active_timer`);
+      if (saved) {
+        const parsed: ActiveTimerState = JSON.parse(saved);
+        if (parsed.isRunning && parsed.targetEndTime) {
+          const diff = Math.round((parsed.targetEndTime - Date.now()) / 1000);
+          if (diff > 0) {
+            return { ...parsed, secondsRemaining: diff };
+          } else {
+            return {
+              ...parsed,
+              isRunning: false,
+              secondsRemaining: 0,
+              targetEndTime: null,
+              showCompletionAlert: true,
+            };
+          }
+        }
+        return parsed;
+      }
+    } catch {}
+    return defaultTimer;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_active_timer`, JSON.stringify(activeTimer));
+    } catch (e) {
+      console.error('Failed to save activeTimer', e);
+    }
+  }, [activeTimer]);
+
+  useEffect(() => {
+    if (subjects.length > 0 && !activeTimer.selectedSubjectId) {
+      setActiveTimer((prev) => ({ ...prev, selectedSubjectId: subjects[0].id }));
+    }
+  }, [subjects, activeTimer.selectedSubjectId]);
 
   // Persistence to LocalStorage
   useEffect(() => {
@@ -299,6 +445,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to save settings', e);
     }
   }, [settings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_mock_tests`, JSON.stringify(mockTests));
+    } catch (e) {
+      console.error('Failed to save mockTests', e);
+    }
+  }, [mockTests]);
 
   // Synchronize Dark / Light Theme
   useEffect(() => {
@@ -472,6 +626,245 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  // ----------------------------------------------------
+  // Active Timer Actions & Real-Time Loop
+  // ----------------------------------------------------
+  const handleGlobalTimerComplete = () => {
+    if (activeTimer.mode === 'study') {
+      if (settings.soundEnabled) {
+        playChimeSound('study_done');
+      }
+      triggerNotification(
+        'Focus Session Complete! 🎉',
+        `Great work! Take a ${activeTimer.breakMinutes}-minute break to recharge.`
+      );
+
+      const activeSubject = subjects.find((s) => s.id === activeTimer.selectedSubjectId) || subjects[0];
+      const completedMins = activeTimer.studyMinutes;
+      const today = getDhakaTodayDateString();
+      const timeInfo = getDhakaTimeString();
+
+      if (activeSubject) {
+        addFocusSession({
+          subjectId: activeSubject.id,
+          subjectName: activeSubject.name,
+          durationMinutes: completedMins,
+          dateKey: today,
+          timeStr: timeInfo.time,
+          notes: activeTimer.sessionNotes.trim() || `${activeTimer.preset} focused session`,
+          presetUsed: activeTimer.preset,
+        });
+      }
+
+      // Auto switch to break mode
+      setActiveTimer((prev) => ({
+        ...prev,
+        isRunning: false,
+        mode: 'break',
+        secondsRemaining: prev.breakMinutes * 60,
+        targetEndTime: null,
+        completedSessionsCount: prev.completedSessionsCount + 1,
+        showCompletionAlert: true,
+        lastCompletedMinutes: completedMins,
+      }));
+    } else {
+      if (settings.soundEnabled) {
+        playChimeSound('break_done');
+      }
+      triggerNotification('Break Finished! 🔔', 'Ready to begin your next focused study session?');
+
+      setActiveTimer((prev) => ({
+        ...prev,
+        isRunning: false,
+        mode: 'study',
+        secondsRemaining: prev.studyMinutes * 60,
+        targetEndTime: null,
+      }));
+    }
+  };
+
+  useEffect(() => {
+    let interval: number | null = null;
+
+    if (activeTimer.isRunning && activeTimer.targetEndTime) {
+      const syncCountdown = () => {
+        if (!activeTimer.targetEndTime) return;
+        const diff = Math.round((activeTimer.targetEndTime - Date.now()) / 1000);
+        if (diff <= 0) {
+          handleGlobalTimerComplete();
+        } else {
+          setActiveTimer((prev) => ({ ...prev, secondsRemaining: diff }));
+          const m = Math.floor(diff / 60);
+          const s = diff % 60;
+          const icon = activeTimer.mode === 'study' ? '📚' : '☕';
+          document.title = `(${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}) ${icon} Pre-Test Command Center`;
+        }
+      };
+
+      interval = window.setInterval(syncCountdown, 1000);
+
+      const handleVisibility = () => {
+        if (document.visibilityState === 'visible' && activeTimer.isRunning) {
+          syncCountdown();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibility);
+
+      return () => {
+        if (interval) clearInterval(interval);
+        document.removeEventListener('visibilitychange', handleVisibility);
+      };
+    } else {
+      document.title = 'Pre-Test Command Center | Bangladesh Standard Time';
+    }
+  }, [
+    activeTimer.isRunning,
+    activeTimer.targetEndTime,
+    activeTimer.mode,
+    activeTimer.studyMinutes,
+    activeTimer.breakMinutes,
+    activeTimer.selectedSubjectId,
+    subjects,
+    settings.soundEnabled,
+  ]);
+
+  const startTimer = () => {
+    const targetEnd = Date.now() + activeTimer.secondsRemaining * 1000;
+    if (settings.soundEnabled) {
+      playChimeSound('timer_start');
+    }
+    setActiveTimer((prev) => ({
+      ...prev,
+      isRunning: true,
+      targetEndTime: targetEnd,
+    }));
+  };
+
+  const pauseTimer = () => {
+    setActiveTimer((prev) => ({
+      ...prev,
+      isRunning: false,
+      targetEndTime: null,
+    }));
+  };
+
+  const toggleTimerPlay = () => {
+    if (activeTimer.isRunning) {
+      pauseTimer();
+    } else {
+      startTimer();
+    }
+  };
+
+  const resetTimer = () => {
+    setActiveTimer((prev) => ({
+      ...prev,
+      isRunning: false,
+      targetEndTime: null,
+      secondsRemaining: (prev.mode === 'study' ? prev.studyMinutes : prev.breakMinutes) * 60,
+    }));
+    document.title = 'Pre-Test Command Center | Bangladesh Standard Time';
+  };
+
+  const applyTimerPreset = (preset: TimerPreset, sMin?: number, bMin?: number) => {
+    let s = 25;
+    let b = 5;
+    if (preset === '25-5') {
+      s = 25;
+      b = 5;
+    } else if (preset === '50-10') {
+      s = 50;
+      b = 10;
+    } else if (preset === '60-10') {
+      s = 60;
+      b = 10;
+    } else if (preset === 'custom') {
+      s = sMin || activeTimer.studyMinutes;
+      b = bMin || activeTimer.breakMinutes;
+    }
+
+    setActiveTimer((prev) => ({
+      ...prev,
+      isRunning: false,
+      targetEndTime: null,
+      preset,
+      studyMinutes: s,
+      breakMinutes: b,
+      mode: 'study',
+      secondsRemaining: s * 60,
+    }));
+    document.title = 'Pre-Test Command Center | Bangladesh Standard Time';
+  };
+
+  const setTimerSubject = (subjectId: string) => {
+    setActiveTimer((prev) => ({ ...prev, selectedSubjectId: subjectId }));
+  };
+
+  const setTimerNotes = (notes: string) => {
+    setActiveTimer((prev) => ({ ...prev, sessionNotes: notes }));
+  };
+
+  const skipBreak = () => {
+    setActiveTimer((prev) => ({
+      ...prev,
+      isRunning: false,
+      targetEndTime: null,
+      mode: 'study',
+      secondsRemaining: prev.studyMinutes * 60,
+    }));
+    document.title = 'Pre-Test Command Center | Bangladesh Standard Time';
+  };
+
+  const finishAndLogSession = (customMinutes?: number) => {
+    const totalCurrentSec = activeTimer.studyMinutes * 60;
+    const elapsedSec = Math.max(0, totalCurrentSec - activeTimer.secondsRemaining);
+    const elapsedMin = customMinutes ?? Math.max(1, Math.round(elapsedSec / 60));
+
+    const activeSubject = subjects.find((s) => s.id === activeTimer.selectedSubjectId) || subjects[0];
+    const today = getDhakaTodayDateString();
+    const timeInfo = getDhakaTimeString();
+
+    if (activeSubject) {
+      addFocusSession({
+        subjectId: activeSubject.id,
+        subjectName: activeSubject.name,
+        durationMinutes: elapsedMin,
+        dateKey: today,
+        timeStr: timeInfo.time,
+        notes: activeTimer.sessionNotes.trim() || `${activeTimer.preset} finished early (${elapsedMin}m)`,
+        presetUsed: activeTimer.preset,
+      });
+    }
+
+    if (settings.soundEnabled) {
+      playChimeSound('study_done');
+    }
+
+    setActiveTimer((prev) => ({
+      ...prev,
+      isRunning: false,
+      targetEndTime: null,
+      mode: 'study',
+      secondsRemaining: prev.studyMinutes * 60,
+      sessionNotes: '',
+      showCompletionAlert: true,
+      lastCompletedMinutes: elapsedMin,
+    }));
+    document.title = 'Pre-Test Command Center | Bangladesh Standard Time';
+  };
+
+  const dismissCompletionAlert = () => {
+    setActiveTimer((prev) => ({ ...prev, showCompletionAlert: false }));
+  };
+
+  const toggleTimerMinimized = () => {
+    setActiveTimer((prev) => ({ ...prev, isMinimized: !prev.isMinimized }));
+  };
+
+  const setTimerMinimized = (minimized: boolean) => {
+    setActiveTimer((prev) => ({ ...prev, isMinimized: minimized }));
+  };
+
   // Task Actions
   const addTask = (taskData: Omit<StudyTask, 'id'>) => {
     const newTask: StudyTask = {
@@ -527,7 +920,99 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateSettings({ manualPreparationPercentage: clamped });
   };
 
-  // Reset & Load Defaults
+  // Mock Tests Actions (Requirement 18)
+  const addMockTest = (testData: Omit<MockTest, 'id' | 'percentage'>) => {
+    const percentage =
+      testData.totalMarks > 0
+        ? Math.round((testData.obtainedMarks / testData.totalMarks) * 1000) / 10
+        : 0;
+    const newTest: MockTest = {
+      ...testData,
+      id: `mock_${Date.now()}`,
+      percentage,
+    };
+    setMockTests((prev) => [newTest, ...prev]);
+  };
+
+  const deleteMockTest = (id: string) => {
+    setMockTests((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  const updateMockTest = (id: string, updates: Partial<MockTest>) => {
+    setMockTests((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m;
+        const merged = { ...m, ...updates };
+        if (updates.totalMarks !== undefined || updates.obtainedMarks !== undefined) {
+          merged.percentage =
+            merged.totalMarks > 0
+              ? Math.round((merged.obtainedMarks / merged.totalMarks) * 1000) / 10
+              : 0;
+        }
+        return merged;
+      })
+    );
+  };
+
+  // Helper to complete topic / chapter from recommendation
+  const updateTopic = (subjectId: string, topicId: string, updates?: any) => {
+    toggleChapterField(subjectId, topicId, 'completed');
+    if (updates?.firstRevision) {
+      toggleChapterField(subjectId, topicId, 'rev1');
+    }
+  };
+
+  // Data Backup / Export & Import (Requirement 21)
+  const exportDataJSON = (): string => {
+    const backupData = {
+      app: 'Pre-Test Command Center',
+      version: '2.0',
+      exportDate: new Date().toISOString(),
+      examConfig,
+      subjects,
+      focusSessions,
+      tasks,
+      checklist,
+      settings,
+      mockTests,
+    };
+    return JSON.stringify(backupData, null, 2);
+  };
+
+  const importDataJSON = (jsonStr: string): boolean => {
+    try {
+      const data = JSON.parse(jsonStr);
+      if (!data || typeof data !== 'object') return false;
+
+      if (data.examConfig && typeof data.examConfig === 'object') {
+        setExamConfig(data.examConfig);
+      }
+      if (Array.isArray(data.subjects) && data.subjects.length > 0) {
+        setSubjects(data.subjects);
+      }
+      if (Array.isArray(data.focusSessions)) {
+        setFocusSessions(data.focusSessions);
+      }
+      if (Array.isArray(data.tasks)) {
+        setTasks(data.tasks);
+      }
+      if (Array.isArray(data.checklist)) {
+        setChecklist(data.checklist);
+      }
+      if (data.settings && typeof data.settings === 'object') {
+        setSettings((prev) => ({ ...prev, ...data.settings }));
+      }
+      if (Array.isArray(data.mockTests)) {
+        setMockTests(data.mockTests);
+      }
+      return true;
+    } catch (e) {
+      console.error('Failed to parse backup JSON', e);
+      return false;
+    }
+  };
+
+  // Reset & Load Defaults (Data Safety Guaranteed: never clears unselected keys)
   const resetAllData = () => {
     setExamConfig(DEFAULT_EXAM_CONFIG);
     setSubjects(DEFAULT_SUBJECTS);
@@ -535,7 +1020,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTasks([]);
     setChecklist(DEFAULT_DAILY_CHECKLIST);
     setSettings(DEFAULT_USER_SETTINGS);
-    localStorage.clear();
+    setMockTests([]);
   };
 
   const resetToDefaults = () => {
@@ -545,6 +1030,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTasks(DEFAULT_TASKS);
     setChecklist(DEFAULT_DAILY_CHECKLIST);
     setSettings(DEFAULT_USER_SETTINGS);
+    setMockTests(DEFAULT_MOCK_TESTS);
   };
 
   const loadSampleData = resetToDefaults;
@@ -764,10 +1250,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     return {
-      currentStreak: Math.max(streak, 7), // Ensure sample baseline or real streak
-      longestStreak: Math.max(maxStreak, streak, 15),
+      currentStreak: streak,
+      longestStreak: Math.max(maxStreak, streak),
     };
   }, [focusSessions, settings.streakThresholdHours, todayKey, yesterdayKey]);
+
+  // Mock Test Stats (Requirement 18)
+  const mockTestStats = useMemo(() => {
+    if (mockTests.length === 0) {
+      return { averageScore: 0, highestScore: 0, lowestScore: 0, totalTests: 0 };
+    }
+    const scores = mockTests.map((m) => m.percentage);
+    const sum = scores.reduce((a, b) => a + b, 0);
+    const averageScore = Math.round((sum / scores.length) * 10) / 10;
+    const highestScore = Math.max(...scores);
+    const lowestScore = Math.min(...scores);
+    return {
+      averageScore,
+      highestScore,
+      lowestScore,
+      totalTests: mockTests.length,
+    };
+  }, [mockTests]);
 
   // 10. Pre-Test Time Analysis (Requirement 4 & 11)
   const preTestAnalysis: PreTestAnalysisData = useMemo(() => {
@@ -923,6 +1427,75 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [subjects]);
 
+  // 13. Smart Study Recommendation Engine (Requirement 10)
+  const smartRecommendation: SmartStudyRecommendation | null = useMemo(() => {
+    if (subjects.length === 0) return null;
+
+    // 1. Check for high priority pending task
+    const pendingHighTask = tasks.find((t) => !t.completed && t.priority === 'high');
+    if (pendingHighTask && pendingHighTask.subjectId) {
+      const subj = subjects.find((s) => s.id === pendingHighTask.subjectId) || subjects[0];
+      return {
+        subjectId: subj.id,
+        subjectName: subj.name,
+        title: pendingHighTask.name,
+        recommendedMinutes: pendingHighTask.estimatedMinutes > 30 ? 50 : 25,
+        reason: 'High priority task scheduled for today + pending completion.',
+      };
+    }
+
+    // 2. Check for chapters with Revision due (finished chapters where rev1 or rev2 not completed)
+    for (const subj of subjects) {
+      const chaps = subj.chapters || [];
+      const revDue = chaps.find((c) => c.completed && (!c.rev1 || !c.rev2));
+      if (revDue) {
+        const stage = !revDue.rev1 ? 'Revision 1' : 'Revision 2';
+        return {
+          subjectId: subj.id,
+          subjectName: subj.name,
+          title: revDue.name,
+          chapterId: revDue.id,
+          topicId: revDue.id,
+          recommendedMinutes: 50,
+          reason: `${stage} due • High-yield active recall before exam.`,
+        };
+      }
+    }
+
+    // 3. Subject with unfinished chapters and lowest syllabus progress
+    let targetSubj = subjects[0];
+    let lowestPct = 101;
+    for (const stat of subjectSyllabusStats) {
+      if (stat.remainingChapters > 0 && stat.percentage < lowestPct) {
+        lowestPct = stat.percentage;
+        targetSubj = stat.subject;
+      }
+    }
+
+    const unfinished = (targetSubj.chapters || []).find((c) => !c.completed);
+    if (unfinished) {
+      return {
+        subjectId: targetSubj.id,
+        subjectName: targetSubj.name,
+        title: unfinished.name,
+        chapterId: unfinished.id,
+        topicId: unfinished.id,
+        recommendedMinutes: 50,
+        reason: 'Lowest syllabus completion in this subject • High-yield chapter.',
+      };
+    }
+
+    // 4. Default review sprint
+    const sub = subjects[0];
+    return {
+      subjectId: sub.id,
+      subjectName: sub.name,
+      title: sub.chapters?.[0]?.name || 'Core Concept Drill',
+      recommendedMinutes: 25,
+      reason: 'Regular daily target booster • Quick focus sprint.',
+    };
+  }, [subjects, tasks, subjectSyllabusStats]);
+
   return (
     <AppContext.Provider
       value={{
@@ -938,6 +1511,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addChapter,
         deleteChapter,
         updateChapter,
+        mockTests,
+        addMockTest,
+        deleteMockTest,
+        updateMockTest,
+        mockTestStats,
+        smartRecommendation,
+        updateTopic,
+        exportDataJSON,
+        importDataJSON,
         focusSessions,
         addFocusSession,
         deleteFocusSession,
@@ -958,6 +1540,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSidebarCollapsed,
         focusTimerModalOpen,
         setFocusTimerModalOpen,
+        activeTimer,
+        startTimer,
+        pauseTimer,
+        toggleTimerPlay,
+        resetTimer,
+        applyTimerPreset,
+        setTimerSubject,
+        setTimerNotes,
+        skipBreak,
+        finishAndLogSession,
+        dismissCompletionAlert,
+        toggleTimerMinimized,
+        setTimerMinimized,
         quickEditExamModalOpen,
         setQuickEditExamModalOpen,
         notificationPermission,

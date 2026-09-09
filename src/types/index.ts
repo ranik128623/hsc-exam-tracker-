@@ -140,3 +140,46 @@ export type ActiveTab =
   | 'history'
   | 'analytics'
   | 'settings';
+
+export interface MockTest {
+  id: string;
+  name: string;
+  date: string; // YYYY-MM-DD
+  subjectId: string;
+  subjectName: string;
+  totalMarks: number;
+  obtainedMarks: number;
+  percentage: number; // e.g. 85.0
+  timeTakenMinutes?: number;
+  mistakes?: string;
+  weakAreas?: string;
+}
+
+export interface SmartStudyRecommendation {
+  subjectId: string;
+  subjectName: string;
+  title: string;
+  topicId?: string;
+  chapterId?: string;
+  recommendedMinutes: number;
+  reason: string;
+}
+
+export type TimerMode = 'study' | 'break';
+export type TimerPreset = '25-5' | '50-10' | '60-10' | 'custom';
+
+export interface ActiveTimerState {
+  isRunning: boolean;
+  mode: TimerMode;
+  studyMinutes: number;
+  breakMinutes: number;
+  secondsRemaining: number;
+  selectedSubjectId: string;
+  preset: TimerPreset;
+  sessionNotes: string;
+  targetEndTime: number | null;
+  completedSessionsCount: number;
+  isMinimized: boolean;
+  showCompletionAlert: boolean;
+  lastCompletedMinutes: number;
+}

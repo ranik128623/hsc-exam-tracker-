@@ -54,6 +54,7 @@ export function FocusHubCard({ isFullScreenView = false }: FocusHubCardProps) {
   }>({ open: false, subjectName: '', minutes: 0 });
 
   const timerRef = useRef<number | null>(null);
+  const targetEndTimeRef = useRef<number | null>(null);
 
   // If subjects list changes, ensure a valid selection
   useEffect(() => {
@@ -71,6 +72,7 @@ export function FocusHubCard({ isFullScreenView = false }: FocusHubCardProps) {
   // Switch preset
   const handlePresetSelect = (type: '25-5' | '50-10' | '60-10' | 'custom', customVal?: number) => {
     setIsRunning(false);
+    targetEndTimeRef.current = null;
     setPreset(type);
     let s = 25;
     let b = 5;
@@ -95,29 +97,53 @@ export function FocusHubCard({ isFullScreenView = false }: FocusHubCardProps) {
     setSecondsRemaining(s * 60);
   };
 
-  // Timer interval countdown loop
+  // Timer interval countdown loop with real-time timestamp sync & visibility awareness
   useEffect(() => {
     if (isRunning) {
-      timerRef.current = window.setInterval(() => {
-        setSecondsRemaining((prev) => {
-          if (prev <= 1) {
-            handleCompleteSession(studyMinutes);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
+      if (!targetEndTimeRef.current) {
+        targetEndTimeRef.current = Date.now() + secondsRemaining * 1000;
+      }
 
-    return () => {
+      const syncCountdown = () => {
+        if (!targetEndTimeRef.current) return;
+        const diff = Math.round((targetEndTimeRef.current - Date.now()) / 1000);
+        if (diff <= 0) {
+          setSecondsRemaining(0);
+          targetEndTimeRef.current = null;
+          handleCompleteSession(studyMinutes);
+        } else {
+          setSecondsRemaining(diff);
+          const m = Math.floor(diff / 60);
+          const s = diff % 60;
+          document.title = `(${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}) ${mode === 'study' ? '📚' : '☕'} Pre-Test Command Center`;
+        }
+      };
+
+      timerRef.current = window.setInterval(syncCountdown, 1000);
+
+      const handleVisibility = () => {
+        if (document.visibilityState === 'visible' && isRunning) {
+          syncCountdown();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibility);
+
+      return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        document.removeEventListener('visibilitychange', handleVisibility);
+        document.title = 'Pre-Test Command Center | Bangladesh Standard Time';
+      };
+    } else {
       if (timerRef.current) clearInterval(timerRef.current);
-    };
+      targetEndTimeRef.current = null;
+      document.title = 'Pre-Test Command Center | Bangladesh Standard Time';
+    }
   }, [isRunning, mode, studyMinutes, breakMinutes, selectedSubjectId, activeSubject]);
 
   const handleCompleteSession = (completedMins: number) => {
     setIsRunning(false);
+    targetEndTimeRef.current = null;
+    document.title = 'Pre-Test Command Center | Bangladesh Standard Time';
 
     if (mode === 'study') {
       if (settings.soundEnabled) {
@@ -164,15 +190,23 @@ export function FocusHubCard({ isFullScreenView = false }: FocusHubCardProps) {
   };
 
   const handleTogglePlay = () => {
-    if (!isRunning && settings.soundEnabled) {
-      playChimeSound('timer_start');
+    if (!isRunning) {
+      targetEndTimeRef.current = Date.now() + secondsRemaining * 1000;
+      if (settings.soundEnabled) {
+        playChimeSound('timer_start');
+      }
+      setIsRunning(true);
+    } else {
+      targetEndTimeRef.current = null;
+      setIsRunning(false);
     }
-    setIsRunning(!isRunning);
   };
 
   const handleReset = () => {
     setIsRunning(false);
+    targetEndTimeRef.current = null;
     setSecondsRemaining((mode === 'study' ? studyMinutes : breakMinutes) * 60);
+    document.title = 'Pre-Test Command Center | Bangladesh Standard Time';
   };
 
   // Allow user to finish session early and save time studied so far

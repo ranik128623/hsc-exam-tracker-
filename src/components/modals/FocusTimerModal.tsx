@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { playChimeSound } from '../../utils/audioAndQuotes';
-import { getDhakaTodayDateString } from '../../utils/timeUtils';
 import {
   X,
   Play,
@@ -11,142 +10,56 @@ import {
   CheckCircle2,
   BookOpen,
   Volume2,
+  Minimize2,
+  ExternalLink,
 } from 'lucide-react';
+import { TimerPreset } from '../../types';
 
 export function FocusTimerModal() {
   const {
     focusTimerModalOpen,
     setFocusTimerModalOpen,
     subjects,
-    logStudyHours,
-    todayCompletedHours,
-    triggerNotification,
-    addFocusSession,
+    activeTimer,
+    toggleTimerPlay,
+    resetTimer,
+    applyTimerPreset,
+    setTimerSubject,
+    skipBreak,
+    finishAndLogSession,
+    dismissCompletionAlert,
+    setTimerMinimized,
   } = useApp();
-
-  type Mode = 'study' | 'break';
-
-  const [preset, setPreset] = useState<'25-5' | '50-10' | '60-10' | 'custom'>('25-5');
-  const [studyMinutes, setStudyMinutes] = useState(25);
-  const [breakMinutes, setBreakMinutes] = useState(5);
-  const [mode, setMode] = useState<Mode>('study');
-  const [secondsRemaining, setSecondsRemaining] = useState(25 * 60);
-  const [isRunning, setIsRunning] = useState(false);
-  const [completedSessionsCount, setCompletedSessionsCount] = useState(0);
-  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
-  const [sessionCompletedDialog, setSessionCompletedDialog] = useState(false);
-  const [lastCompletedMinutes, setLastCompletedMinutes] = useState(0);
-
-  const timerRef = useRef<number | null>(null);
-
-  // Set default subject if available
-  useEffect(() => {
-    if (subjects.length > 0 && !selectedSubjectId) {
-      setSelectedSubjectId(subjects[0].id);
-    }
-  }, [subjects, selectedSubjectId]);
-
-  // Sync preset changes
-  const applyPreset = (type: '25-5' | '50-10' | '60-10' | 'custom', sMin?: number, bMin?: number) => {
-    setIsRunning(false);
-    setPreset(type);
-    let s = 25;
-    let b = 5;
-    if (type === '25-5') {
-      s = 25;
-      b = 5;
-    } else if (type === '50-10') {
-      s = 50;
-      b = 10;
-    } else if (type === '60-10') {
-      s = 60;
-      b = 10;
-    } else if (type === 'custom') {
-      s = sMin || studyMinutes;
-      b = bMin || breakMinutes;
-    }
-    setStudyMinutes(s);
-    setBreakMinutes(b);
-    setMode('study');
-    setSecondsRemaining(s * 60);
-  };
-
-  // Timer countdown loop
-  useEffect(() => {
-    if (isRunning) {
-      timerRef.current = window.setInterval(() => {
-        setSecondsRemaining((prev) => {
-          if (prev <= 1) {
-            handleTimerComplete();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isRunning, mode, studyMinutes, breakMinutes]);
-
-  const handleTimerComplete = () => {
-    setIsRunning(false);
-    if (mode === 'study') {
-      playChimeSound('study_done');
-      triggerNotification('Focus Session Complete! 🎉', `Great work! Take a ${breakMinutes}-minute break to recharge.`);
-      setCompletedSessionsCount((c) => c + 1);
-      setLastCompletedMinutes(studyMinutes);
-      setSessionCompletedDialog(true);
-      // Auto switch to break
-      setMode('break');
-      setSecondsRemaining(breakMinutes * 60);
-    } else {
-      playChimeSound('break_done');
-      triggerNotification('Break Finished! 🔔', 'Ready to begin your next focused study session?');
-      setMode('study');
-      setSecondsRemaining(studyMinutes * 60);
-    }
-  };
-
-  const handleTogglePlay = () => {
-    setIsRunning(!isRunning);
-  };
-
-  const handleReset = () => {
-    setIsRunning(false);
-    setSecondsRemaining((mode === 'study' ? studyMinutes : breakMinutes) * 60);
-  };
-
-  const handleSkipBreak = () => {
-    setIsRunning(false);
-    setMode('study');
-    setSecondsRemaining(studyMinutes * 60);
-  };
-
-  const handleLogSessionHours = () => {
-    const hoursEarned = Math.round((lastCompletedMinutes / 60) * 10) / 10;
-    const today = getDhakaTodayDateString();
-    const newTotal = todayCompletedHours + hoursEarned;
-    const sub = subjects.find((s) => s.id === selectedSubjectId);
-    if (sub) {
-      addFocusSession(sub.id, lastCompletedMinutes, `Modal session: ${sub.name}`, preset);
-    }
-    logStudyHours(today, newTotal, undefined, `Focus timer: ${sub ? sub.name : 'General study'}`);
-    setSessionCompletedDialog(false);
-  };
 
   if (!focusTimerModalOpen) return null;
 
+  const {
+    preset,
+    studyMinutes,
+    breakMinutes,
+    mode,
+    secondsRemaining,
+    isRunning,
+    completedSessionsCount,
+    selectedSubjectId,
+    showCompletionAlert,
+    lastCompletedMinutes,
+  } = activeTimer;
+
   const totalCurrentSeconds = (mode === 'study' ? studyMinutes : breakMinutes) * 60;
-  const progressPercent = totalCurrentSeconds > 0 ? ((totalCurrentSeconds - secondsRemaining) / totalCurrentSeconds) * 100 : 0;
+  const progressPercent = totalCurrentSeconds > 0
+    ? Math.min(100, Math.max(0, ((totalCurrentSeconds - secondsRemaining) / totalCurrentSeconds) * 100))
+    : 0;
   const displayMinutes = Math.floor(secondsRemaining / 60);
   const displaySeconds = secondsRemaining % 60;
 
+  const handleMinimizeToFloatingBar = () => {
+    setTimerMinimized(false); // expanded mini bar mode
+    setFocusTimerModalOpen(false);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
@@ -164,7 +77,7 @@ export function FocusTimerModal() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => playChimeSound('study_done')}
               className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -172,9 +85,20 @@ export function FocusTimerModal() {
             >
               <Volume2 className="w-4 h-4" />
             </button>
+
+            {/* Minimize to Floating Bar */}
+            <button
+              onClick={handleMinimizeToFloatingBar}
+              className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              title="Minimize to floating bar (stays visible on screen)"
+            >
+              <Minimize2 className="w-4 h-4" />
+            </button>
+
             <button
               onClick={() => setFocusTimerModalOpen(false)}
               className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              title="Close modal (timer continues in floating bar)"
             >
               <X className="w-5 h-5" />
             </button>
@@ -187,7 +111,7 @@ export function FocusTimerModal() {
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               id="preset-25-5"
-              onClick={() => applyPreset('25-5')}
+              onClick={() => applyTimerPreset('25-5')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 preset === '25-5'
                   ? 'bg-emerald-600 text-white shadow-xs'
@@ -198,7 +122,7 @@ export function FocusTimerModal() {
             </button>
             <button
               id="preset-50-10"
-              onClick={() => applyPreset('50-10')}
+              onClick={() => applyTimerPreset('50-10')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 preset === '50-10'
                   ? 'bg-emerald-600 text-white shadow-xs'
@@ -209,7 +133,7 @@ export function FocusTimerModal() {
             </button>
             <button
               id="preset-60-10"
-              onClick={() => applyPreset('60-10')}
+              onClick={() => applyTimerPreset('60-10')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 preset === '60-10'
                   ? 'bg-emerald-600 text-white shadow-xs'
@@ -220,7 +144,7 @@ export function FocusTimerModal() {
             </button>
             <button
               id="preset-custom"
-              onClick={() => applyPreset('custom')}
+              onClick={() => applyTimerPreset('custom')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 preset === 'custom'
                   ? 'bg-emerald-600 text-white shadow-xs'
@@ -243,8 +167,7 @@ export function FocusTimerModal() {
                   value={studyMinutes}
                   onChange={(e) => {
                     const val = Math.max(1, parseInt(e.target.value) || 25);
-                    setStudyMinutes(val);
-                    if (mode === 'study' && !isRunning) setSecondsRemaining(val * 60);
+                    applyTimerPreset('custom', val, breakMinutes);
                   }}
                   className="w-16 px-2 py-1 text-center font-mono font-bold rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
                 />
@@ -258,8 +181,7 @@ export function FocusTimerModal() {
                   value={breakMinutes}
                   onChange={(e) => {
                     const val = Math.max(1, parseInt(e.target.value) || 5);
-                    setBreakMinutes(val);
-                    if (mode === 'break' && !isRunning) setSecondsRemaining(val * 60);
+                    applyTimerPreset('custom', studyMinutes, val);
                   }}
                   className="w-16 px-2 py-1 text-center font-mono font-bold rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
                 />
@@ -268,7 +190,7 @@ export function FocusTimerModal() {
           )}
 
           {/* Circular Progress & Big Digital Timer */}
-          <div className="flex flex-col items-center justify-center py-4">
+          <div className="flex flex-col items-center justify-center py-2">
             <div className="relative w-56 h-56 flex items-center justify-center">
               {/* SVG circular track */}
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
@@ -324,7 +246,7 @@ export function FocusTimerModal() {
                 <span className="text-slate-500 dark:text-slate-400 font-medium">Studying:</span>
                 <select
                   value={selectedSubjectId}
-                  onChange={(e) => setSelectedSubjectId(e.target.value)}
+                  onChange={(e) => setTimerSubject(e.target.value)}
                   className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold text-slate-800 dark:text-slate-200 text-xs"
                 >
                   {subjects.map((sub) => (
@@ -337,11 +259,11 @@ export function FocusTimerModal() {
             )}
           </div>
 
-          {/* Action Buttons: Start / Pause, Reset, Skip Break */}
+          {/* Action Buttons: Start / Pause, Reset, Finish Early, Skip Break */}
           <div className="flex items-center justify-center gap-3">
             <button
               id="btn-timer-reset"
-              onClick={handleReset}
+              onClick={resetTimer}
               className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold transition-all"
               title="Reset Timer"
               aria-label="Reset Timer"
@@ -351,7 +273,7 @@ export function FocusTimerModal() {
 
             <button
               id="btn-timer-toggle"
-              onClick={handleTogglePlay}
+              onClick={toggleTimerPlay}
               className={`px-8 py-3.5 rounded-2xl font-bold text-white shadow-md flex items-center gap-2 text-base transition-all active:scale-95 ${
                 isRunning
                   ? 'bg-amber-600 hover:bg-amber-700'
@@ -371,10 +293,22 @@ export function FocusTimerModal() {
               )}
             </button>
 
+            {mode === 'study' && secondsRemaining < totalCurrentSeconds && (
+              <button
+                id="btn-timer-finish-early"
+                onClick={() => finishAndLogSession()}
+                className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 font-semibold transition-all border border-emerald-500/20"
+                title="Finish session & log hours now"
+                aria-label="Finish session & log hours"
+              >
+                <CheckCircle2 className="w-5 h-5" />
+              </button>
+            )}
+
             {mode === 'break' && (
               <button
                 id="btn-timer-skip-break"
-                onClick={handleSkipBreak}
+                onClick={skipBreak}
                 className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold transition-all"
                 title="Skip Break & Start Study"
                 aria-label="Skip Break"
@@ -383,10 +317,21 @@ export function FocusTimerModal() {
               </button>
             )}
           </div>
+
+          {/* Floating bar hint for user */}
+          <div className="text-center pt-2">
+            <button
+              onClick={handleMinimizeToFloatingBar}
+              className="text-xs text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 inline-flex items-center gap-1.5 transition-colors font-medium"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>মোডাল বন্ধ করলে স্ক্রিনে ভাসমান টাইমার বার চালু থাকবে</span>
+            </button>
+          </div>
         </div>
 
         {/* Dialog for session completion */}
-        {sessionCompletedDialog && (
+        {showCompletionAlert && (
           <div className="p-4 bg-emerald-50 dark:bg-emerald-950/70 border-t border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -394,26 +339,19 @@ export function FocusTimerModal() {
                 <span className="font-bold text-emerald-800 dark:text-emerald-200">
                   {lastCompletedMinutes} minutes logged!
                 </span>{' '}
-                Add this time to today's study target?
+                Session successfully added to today's study records.
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={handleLogSessionHours}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
-              >
-                + Add Hours
-              </button>
-              <button
-                onClick={() => setSessionCompletedDialog(false)}
-                className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400"
-              >
-                Dismiss
-              </button>
-            </div>
+            <button
+              onClick={dismissCompletionAlert}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+            >
+              OK
+            </button>
           </div>
         )}
       </div>
     </div>
   );
 }
+

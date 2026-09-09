@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { ExamCountdownHero } from './ExamCountdownHero';
 import { TopDashboardStatCards } from './TopDashboardStatCards';
+import { StudyNowCard } from './StudyNowCard';
 import { SyllabusProgressCard } from '../syllabus/SyllabusProgressCard';
 import { FocusHubCard } from '../focus/FocusHubCard';
 import { TodayGoalCard } from './TodayGoalCard';
@@ -27,6 +28,11 @@ export function DashboardView() {
       {/* Top Essential Stat Cards (Days Left, Total Study Hours, Today's Study, Streak, Weekly, Daily Average) */}
       <section id="section-top-cards">
         <TopDashboardStatCards />
+      </section>
+
+      {/* Smart "What Should I Study Now?" Rule-based Recommendation */}
+      <section id="section-study-now">
+        <StudyNowCard />
       </section>
 
       {/* PROMINENT SYLLABUS PROGRESS CARD: Automatic Completion %, Chapter Checklist, 30 Remaining */}

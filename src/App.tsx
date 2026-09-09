@@ -9,6 +9,7 @@ import { Navbar } from './components/layout/Navbar';
 import { Sidebar } from './components/layout/Sidebar';
 import { MobileNav } from './components/layout/MobileNav';
 import { FocusTimerModal } from './components/modals/FocusTimerModal';
+import { FloatingMiniTimer } from './components/focus/FloatingMiniTimer';
 import { QuickEditExamModal } from './components/modals/QuickEditExamModal';
 import { OfflineIndicator } from './components/pwa/OfflineIndicator';
 
@@ -77,11 +78,7 @@ function MainContent() {
         />
 
         {/* Main View Area with iPad & iPhone Safe Padding */}
-        <main
-          className={`flex-1 overflow-y-auto px-4 py-5 sm:px-6 md:px-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-12 transition-all duration-300 ${
-            sidebarCollapsed ? 'md:ml-20' : 'md:ml-64'
-          }`}
-        >
+        <main className="flex-1 min-w-0 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-12">
           {renderActiveView()}
         </main>
       </div>
@@ -92,8 +89,9 @@ function MainContent() {
       {/* Offline Status Pill for PWA */}
       <OfflineIndicator />
 
-      {/* Global Modals */}
+      {/* Global Modals & Persistent Floating Timer */}
       <FocusTimerModal />
+      <FloatingMiniTimer />
       <QuickEditExamModal />
     </div>
   );
